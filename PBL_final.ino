@@ -67,22 +67,16 @@ void startWait(unsigned long ms, RobotState nextState) {
 }
 
 void setup() {
-  Serial.begin(115200);
-
   myServo.attach(SERVO_PIN);
   myServo.write(0); // Ensure gripper is released at boot
 
   int pixyRetry = 0;
   while (pixy.init() != 0 && pixyRetry < 5) {
-    Serial.println(" Pixy2 connection failed, retrying in 1 second...");
     delay(1000); 
     pixyRetry++;
   }
-  if(pixyRetry >= 5) Serial.println("⚠️ Pixy2 cannot connect, please check the wiring!");
-  else Serial.println(" Pixy2 vision system started successfully!");
 
   if (!bno.begin(OPERATION_MODE_IMUPLUS)) {
-    Serial.println("❌ BNO055 not found! Please check the wiring.");
     while (1);
   }
   bno.setExtCrystalUse(true);
@@ -92,22 +86,15 @@ void setup() {
   pinMode(PWM_RL, OUTPUT); pinMode(PWM_RR, OUTPUT);
   stopMotors();
 
-  Serial.println("\n✅ Waiting for gyroscope stabilization and calibration...");
   uint8_t system, gyro, accel, mag;
   system = gyro = accel = mag = 0;
 
   while (gyro < 3) {
     bno.getCalibration(&system, &gyro, &accel, &mag);
-    Serial.print("⏳ Gyroscope calibration progress (needs to reach 3): ");
-    Serial.println(gyro);
   }
-
-  Serial.println("✨ Gyroscope calibration complete!");
 
   startupHeading = getHeading();
   globalTargetHeading = startupHeading;
-  Serial.print("🎯 Locked global initial angle: ");
-  Serial.println(startupHeading);
 }
 
 void loop() {
@@ -120,29 +107,24 @@ void loop() {
       break;
 
     case STATE_INIT:
-      Serial.println(">> [Wait] Starting match");
       startWait(0, STATE_FORWARD_1);
       break;
 
     case STATE_FORWARD_1:
-      Serial.println(">> [State 1] Driving blind forward for 1.2 seconds...");
       driveStraightForTime(1000);
       startWait(200, STATE_TURN_TO_GRAB);
       break;
 
     case STATE_TURN_TO_GRAB:
       if (grabbedSignature == 1) {
-        Serial.println(">> [State 2] Grabbed Sig 1 last time, turning left back to grab lane...");
         turnDegrees(-90.0);
       } else {
-        Serial.println(">> [State 2] First run or Sig 4 last time, default right turn into grab lane...");
         turnDegrees(90.0);
       }
       startWait(200, STATE_FORWARD_TO_GRAB);
       break;
 
     case STATE_FORWARD_TO_GRAB:
-      Serial.println(">> [State 3] Driving forward to find grab zone (until 10cm from wall)...");
       currentSpeed = 85;
       driveStraightUntilDistance(4);
       currentSpeed = 200;
@@ -150,12 +132,6 @@ void loop() {
       break;
 
     case STATE_WAIT_FOR_ITEM: {
-      static unsigned long waitPrintTime = millis() - 10000;
-      if (millis() - waitPrintTime >= 10000) {
-        waitPrintTime = millis();
-        Serial.println(">> [State 4] Vision locking... Waiting for Signature 1 or 4 to enter grab zone");
-      }
-
       if (millis() - previousPixyMillis >= pixyInterval) {
         previousPixyMillis = millis();
         pixy.ccc.getBlocks();
@@ -168,9 +144,6 @@ void loop() {
 
             // Check if target signature entered the grab zone
             if ((signature == 1 || signature == 4) && (x >= 235 && x <= 280) && (y >= 20 && y <= 60)) {
-              Serial.print("🎯 Target locked! Confirmed Signature: ");
-              Serial.println(signature);
-              
               grabbedSignature = signature;
               currentState = STATE_GRAB_ITEM;
             }
@@ -181,7 +154,6 @@ void loop() {
     }
 
     case STATE_GRAB_ITEM:
-      Serial.println(">> [State 5] Activating servo motor (close)...");
       myServo.write(160);
       startWait(2000, STATE_VERIFY_GRAB); // Wait for servo to close
       break;
@@ -191,18 +163,14 @@ void loop() {
       
       // Verify if valid target was grabbed
       if (grabbedSignature == 0) {
-        Serial.println("⚠️ Target lost or grabbed white cube! Aborting grab.");
         currentState = STATE_MISGRAB_FAILSAFE_1;
       } else {
-        Serial.print("🎯 Target verified in gripper. Signature: ");
-        Serial.println(grabbedSignature);
         currentState = STATE_BACKWARD;
       }
       break;
     }
 
     case STATE_MISGRAB_FAILSAFE_1:
-      Serial.println(">> [State X] Reversing to drop white cube...");
       driveBackwardForTime(50);
       turnDegrees(-90.0);       // Turn to dump cube
       myServo.write(0);         // Open gripper
@@ -211,46 +179,37 @@ void loop() {
     
     case STATE_MISGRAB_FAILSAFE_2:
       turnDegrees(90.0);        // Turn back to lane
-      Serial.println(">> Dump complete. Re-entering approach sequence.");
       currentState = STATE_FORWARD_TO_GRAB;
       break;
 
     case STATE_BACKWARD:
-      Serial.println(">> [State 6] Reversing to increase distance...");
       driveBackwardForTime(250);
       startWait(200, STATE_TURN_TO_PLACE);
       break;
 
     case STATE_TURN_TO_PLACE:
       if (grabbedSignature == 1) {
-        Serial.println(">> [State 7] Judged as Sig 1: Turning left 90 degrees...");
         turnDegrees(-90.0);
       } else if (grabbedSignature == 4) {
-        Serial.println(">> [State 7] Judged as Sig 4: Turning right 90 degrees...");
         turnDegrees(90.0);
       } else {
-        Serial.println(">> [State 7] Unknown error: Default turning left 90 degrees...");
         turnDegrees(-90.0);
       }
       startWait(200, STATE_FORWARD_TO_PLACE);
       break;
 
     case STATE_FORWARD_TO_PLACE:
-      Serial.println(">> [State 8] Driving forward to placement point...");
       driveStraightUntilDistance(28);
       startWait(200, STATE_PLACE_ITEM);
       break;
 
     case STATE_PLACE_ITEM:
-      Serial.println(">> [State 9] Activating servo motor (release)...");
       myServo.write(0);
       startWait(800, STATE_TURN_180_AND_RETURN);
       break;
 
     case STATE_TURN_180_AND_RETURN:
-      Serial.println(">> [State 10] Rotating 180 degrees in place...");
       turnDegrees(180.0);
-      Serial.println("\n🎉 Single trip mission complete! Preparing to restart search mode directly...");
       startWait(400, STATE_FORWARD_1); 
       break;
   }
@@ -297,7 +256,6 @@ void driveBackwardForTime(unsigned long ms) {
 }
 
 void driveStraightUntilDistance(int targetCM) {
-  unsigned long lastPrintTime = millis() - 10000;
   unsigned long lastPingTime = 0;
   const int REQUIRED_CONFIRMATIONS = 3;
   int validCount = 0;                  
@@ -316,11 +274,6 @@ void driveStraightUntilDistance(int targetCM) {
       }
       else if (distance > targetCM) {
         validCount = 0;
-      }
-
-      if (millis() - lastPrintTime >= 10000) {
-        lastPrintTime = millis();
-        Serial.print(" | 📡 Front: "); Serial.print(distance); Serial.println("cm");
       }
     }
 
@@ -357,13 +310,11 @@ void turnDegrees(float angleChange) {
   float lastError = 0;
 
   unsigned long stableTime = 0;  
-  unsigned long lastPrintTime = millis() - 10000;
   unsigned long lastTime = millis();
   unsigned long turnStartTime = millis();
 
   while (true) {
     if (millis() - turnStartTime > 2000) {
-      Serial.println("⚠️ Steering timeout! Forced exit.");
       break;
     }
 
@@ -374,12 +325,6 @@ void turnDegrees(float angleChange) {
 
     float current = getHeading();
     float error = getHeadingError(globalTargetHeading, current);
-
-    if (now - lastPrintTime >= 10000) {
-      lastPrintTime = now;
-      Serial.print("🚀 Target Angle: "); Serial.print(globalTargetHeading);
-      Serial.print(" | 🧭 Current Angle: "); Serial.println(current);
-    }
 
     if (abs(error) <= 1.0) {
       stopMotors();
@@ -416,7 +361,6 @@ void turnDegrees(float angleChange) {
   }
 
   stopMotors();
-  Serial.println("✅ Global precise steering complete!");
 }
 
 float getHeading() {
