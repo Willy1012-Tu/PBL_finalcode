@@ -74,12 +74,12 @@ void setup() {
 
   int pixyRetry = 0;
   while (pixy.init() != 0 && pixyRetry < 5) {
-    Serial.println("❌ Pixy2 connection failed, retrying in 1 second...");
+    Serial.println(" Pixy2 connection failed, retrying in 1 second...");
     delay(1000); 
     pixyRetry++;
   }
   if(pixyRetry >= 5) Serial.println("⚠️ Pixy2 cannot connect, please check the wiring!");
-  else Serial.println("✅ Pixy2 vision system started successfully!");
+  else Serial.println(" Pixy2 vision system started successfully!");
 
   if (!bno.begin(OPERATION_MODE_IMUPLUS)) {
     Serial.println("❌ BNO055 not found! Please check the wiring.");
